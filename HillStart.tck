@@ -1,0 +1,300 @@
+#labels=R1,R2,R3,R4
+system:HillStart
+
+clock:1:STimer
+clock:1:AccTimer
+clock:1:BTimer
+clock:1:MTimer
+clock:1:HBTimer
+clock:1:HSTimer
+clock:1:c
+
+int:1:0:1:0:v
+
+
+int:1:0:2:0:BatteryStat
+
+event:tau
+event:BatteryErr_emit
+
+process:Battery
+location:Battery:BatteryFull{initial:}
+location:Battery:BatteryLow{}
+location:Battery:BatteryError{}
+edge:Battery:BatteryFull:BatteryError:BatteryErr_emit{do:BatteryStat=2}
+edge:Battery:BatteryLow:BatteryError:BatteryErr_emit{do:BatteryStat=2}
+edge:Battery:BatteryFull:BatteryLow:tau{do:BatteryStat=1}
+
+
+
+
+int:1:0:2:0:SwitchStat
+event:QuitD_emit
+
+process:DNRSwitch
+location:DNRSwitch:D{initial:}
+location:DNRSwitch:R{}
+location:DNRSwitch:N{}
+edge:DNRSwitch:R:N:tau{do:SwitchStat=1;STimer=0:provided:(STimer >= 100)}
+edge:DNRSwitch:D:N:QuitD_emit{do:SwitchStat=1;STimer=0:provided:(STimer >= 100)}
+edge:DNRSwitch:N:R:tau{do:SwitchStat=2;STimer=0:provided:(STimer >= 100)}
+edge:DNRSwitch:N:D:tau{do:SwitchStat=0;STimer=0:provided:(STimer >= 100)}
+
+
+int:1:0:1:0:AccPedalStat
+int:1:0:1:0:CBrakeStat
+event:AccPedalDeepEnough_emit
+event:CBrakeDeepEnough_emit
+event:AccPedalNormal_emit
+event:CBrakeNormal_emit
+
+process:AccPedal
+location:AccPedal:Normal{initial:}
+location:AccPedal:DeepEnough{}
+edge:AccPedal:Normal:DeepEnough:AccPedalDeepEnough_emit{do:AccTimer=0;AccPedalStat=1:provided:BTimer >= 1000&&AccTimer >= 100&&CBrakeStat == 1}
+edge:AccPedal:DeepEnough:Normal:AccPedalNormal_emit{do:AccTimer=0;AccPedalStat=0:provided:(AccTimer >= 100)}
+
+process:CBrake
+location:CBrake:Normal{}
+location:CBrake:DeepEnough{initial:}
+edge:CBrake:Normal:DeepEnough:CBrakeDeepEnough_emit{do:BTimer=0;CBrakeStat=0:provided:BTimer >= 100&&AccPedalStat == 1}
+edge:CBrake:DeepEnough:Normal:CBrakeNormal_emit{do:BTimer=0;CBrakeStat=1:provided:(BTimer >= 100)}
+
+
+int:1:0:6:0:ErrStat
+int:1:0:1:0:MotorStat
+
+event:ZeroTorqueSet_emit
+event:ReqTorque_recv
+event:ReqZeroSpeed_recv
+event:ChangeToTorqueMode_recv
+event:ReqZeroTorque_recv
+event:FindingZeroSpeedTimeOut_emit
+event:TorqueSet_emit
+event:ZeroSpeedSet_emit
+
+process:Motor
+location:Motor:FindingZeroSpeed{invariant:(MTimer <= 800)}
+location:Motor:ZeroSpeedMode{invariant:(MTimer <= 5000)}
+location:Motor:OverheatError{}
+location:Motor:FindingZeroSpeedtimeout{}
+location:Motor:DecTorque{invariant:(MTimer <= 100)}
+location:Motor:FindingZeroTorqueTimeOut{}
+location:Motor:TorqueSetting{invariant:(MTimer <= 100)}
+location:Motor:TorqueSettingError{}
+location:Motor:TorqueMode{}
+location:Motor:ZeroTorque{initial:}
+edge:Motor:DecTorque:ZeroTorque:ZeroTorqueSet_emit{do:MotorStat=0:provided:(MTimer >= 20)}
+edge:Motor:FindingZeroSpeed:ZeroTorque:tau{do:MotorStat=0:provided:CBrakeStat*(SwitchStat-1)==0}
+edge:Motor:ZeroTorque:TorqueSetting:ReqTorque_recv{do:MTimer=0;MotorStat=1}
+edge:Motor:TorqueSetting:ZeroTorque:tau{do:MotorStat=0:provided:CBrakeStat*(SwitchStat-1)==0}
+edge:Motor:DecTorque:ZeroTorque:tau{do:MotorStat=0:provided:CBrakeStat*(SwitchStat-1)==0}
+edge:Motor:FindingZeroSpeedtimeout:ZeroTorque:tau{do:MotorStat=0:provided:CBrakeStat*(SwitchStat-1)==0}
+edge:Motor:ZeroSpeedMode:ZeroTorque:tau{do:MotorStat=0:provided:CBrakeStat*(SwitchStat-1)==0}
+edge:Motor:TorqueMode:ZeroTorque:tau{do:MotorStat=0:provided:CBrakeStat*(SwitchStat-1)==0}
+edge:Motor:ZeroTorque:FindingZeroSpeed:ReqZeroSpeed_recv{do:MTimer=0;MotorStat=1}
+edge:Motor:ZeroSpeedMode:TorqueMode:ChangeToTorqueMode_recv{}
+edge:Motor:TorqueSetting:TorqueMode:TorqueSet_emit{provided:(MTimer >= 20)}
+edge:Motor:TorqueSetting:TorqueSettingError:tau{do:ErrStat=5:provided:(MTimer == 100)}
+edge:Motor:DecTorque:FindingZeroTorqueTimeOut:tau{do:ErrStat=4:provided:(MTimer == 100)}
+edge:Motor:FindingZeroSpeedtimeout:DecTorque:ReqZeroTorque_recv{do:MTimer=0}
+edge:Motor:FindingZeroSpeed:FindingZeroSpeedtimeout:FindingZeroSpeedTimeOut_emit{provided:(MTimer == 800)}
+edge:Motor:ZeroSpeedMode:OverheatError:tau{do:ErrStat=3:provided:(MTimer == 5000)}
+edge:Motor:FindingZeroSpeed:ZeroSpeedMode:ZeroSpeedSet_emit{do:MTimer=0:provided:(MTimer >= 400)}
+
+int:1:0:1:0:HBStat
+
+event:HBReleased_emit
+event:ReqHBRelease_recv
+event:HBHighTorqueSet_emit
+event:ReqHBHighTorque_recv
+
+process:HB
+location:HB:Released{initial:}
+location:HB:Applying{invariant:(HBTimer <= 200)}
+location:HB:HighTorque{invariant:(HBTimer <= 5000)}
+location:HB:Releasing{invariant:(HBTimer <= 200)}
+location:HB:ErrorApply{}
+location:HB:ErrorRelease{}
+location:HB:OverHeatError{}
+edge:HB:Releasing:Released:tau{do:HBStat=0:provided:CBrakeStat*(SwitchStat-1)==0}
+edge:HB:HighTorque:Released:tau{do:HBStat=0:provided:CBrakeStat*(SwitchStat-1)==0}
+edge:HB:Applying:Released:tau{do:HBStat=0:provided:CBrakeStat*(SwitchStat-1)==0}
+edge:HB:HighTorque:OverHeatError:tau{do:ErrStat=6:provided:((HBTimer == 5000) && (ErrStat == 0))}
+edge:HB:Releasing:ErrorRelease:tau{do:ErrStat=2:provided:(HBTimer == 200)}
+edge:HB:Applying:ErrorApply:tau{do:ErrStat=1:provided:(HBTimer == 200)}
+edge:HB:Releasing:Released:HBReleased_emit{provided:(HBTimer >= 50)}
+edge:HB:HighTorque:Releasing:ReqHBRelease_recv{do:HBTimer=0}
+edge:HB:Applying:HighTorque:HBHighTorqueSet_emit{do:HBTimer=0:provided:(HBTimer >= 50)}
+edge:HB:Released:Applying:ReqHBHighTorque_recv{do:HBTimer=0;HBStat=1}
+
+
+
+
+int:1:0:2:0:HSMode
+
+event:DNRExit_emit
+event:CBrakeExit_emit
+event:HillStartSucceed_emit
+event:QuitD_recv
+event:BatteryErr_recv
+event:CBrakeDeepEnough_recv
+event:ChangeToTorqueMode_emit
+event:AccPedalDeepEnough_recv
+event:ReqTorque_emit
+event:ReqHillStart_recv
+event:ZeroTorqueSet_recv
+event:ReqZeroTorque_emit
+event:FindingZeroSpeedTimeOut_recv
+event:ZeroSpeedSet_recv
+event:ReqZeroSpeed_emit
+event:HBReleased_recv
+event:ReqHBRelease_emit
+event:TorqueSet_recv
+event:HBHighTorqueSet_recv
+event:ReqHBHighTorque_emit
+
+process:HSController
+location:HSController:Initial{initial:}
+location:HSController:PrepareToChangeHSMode{committed:}
+location:HSController:MotorHS{committed:}
+location:HSController:CheckZeroSpeed{invariant:(HSTimer <= 800)}
+location:HSController:MotorBraking{invariant:(HSTimer <= 5050)}
+location:HSController:MotorHSExit{labels: R1:committed:}
+location:HSController:FindingZeroSpeedError{committed:}
+location:HSController:MotorOverHeatError{}
+location:HSController:HBHS{committed:}
+location:HSController:CheckHBTorque{invariant:(HSTimer <= 250)}
+location:HSController:HBBraking{invariant:(HSTimer <= 5050)}
+location:HSController:CheckMotorTorque{invariant:(HSTimer <= 105)}
+location:HSController:MotorTorqueSet{committed:}
+location:HSController:CheckHBRelease{invariant:(HSTimer <= 250)}
+location:HSController:HBHSExit{labels: R2:committed:}
+location:HSController:CheckZeroTorque{invariant:(HSTimer <= 105)}
+location:HSController:ZeroTorqueSettingError{}
+location:HSController:HBApplyError{labels:S1}
+location:HSController:MotorTorqueSettingError{}
+location:HSController:HBReleaseError{}
+location:HSController:CheckingBattery{committed:}
+location:HSController:BatteryError{}
+location:HSController:ReqMotorTorque{committed:}
+location:HSController:ReqMotorTorqueMode{committed:}
+location:HSController:HBOverHeatError{}
+location:HSController:CBrakedeepenough{labels: R4:committed:}
+location:HSController:QuitDrive{labels: R3:committed:}
+edge:HSController:QuitDrive:Initial:DNRExit_emit{}
+edge:HSController:CBrakedeepenough:Initial:CBrakeExit_emit{}
+edge:HSController:HBHSExit:Initial:HillStartSucceed_emit{}
+edge:HSController:MotorHSExit:Initial:HillStartSucceed_emit{}
+edge:HSController:HBBraking:QuitDrive:QuitD_recv{}
+edge:HSController:CheckHBRelease:QuitDrive:QuitD_recv{}
+edge:HSController:CheckMotorTorque:QuitDrive:QuitD_recv{}
+edge:HSController:CheckHBTorque:QuitDrive:QuitD_recv{}
+edge:HSController:CheckZeroTorque:QuitDrive:QuitD_recv{}
+edge:HSController:MotorBraking:QuitDrive:QuitD_recv{}
+edge:HSController:CheckZeroSpeed:QuitDrive:QuitD_recv{}
+edge:HSController:Initial:BatteryError:BatteryErr_recv{}
+edge:HSController:CheckingBattery:BatteryError:tau{provided:(BatteryStat == 2)}
+edge:HSController:CheckHBRelease:CBrakedeepenough:CBrakeDeepEnough_recv{}
+edge:HSController:CheckMotorTorque:CBrakedeepenough:CBrakeDeepEnough_recv{}
+edge:HSController:HBBraking:CBrakedeepenough:CBrakeDeepEnough_recv{}
+edge:HSController:CheckHBTorque:CBrakedeepenough:CBrakeDeepEnough_recv{}
+edge:HSController:CheckZeroTorque:CBrakedeepenough:CBrakeDeepEnough_recv{}
+edge:HSController:MotorBraking:CBrakedeepenough:CBrakeDeepEnough_recv{}
+edge:HSController:CheckZeroSpeed:CBrakedeepenough:CBrakeDeepEnough_recv{}
+edge:HSController:CheckHBRelease:BatteryError:BatteryErr_recv{}
+edge:HSController:CheckMotorTorque:BatteryError:BatteryErr_recv{}
+edge:HSController:HBBraking:BatteryError:BatteryErr_recv{}
+edge:HSController:CheckHBTorque:BatteryError:BatteryErr_recv{}
+edge:HSController:CheckZeroTorque:BatteryError:BatteryErr_recv{}
+edge:HSController:HBBraking:HBOverHeatError:tau{provided:((HSTimer > 5000) && (HSTimer <= 5050))}
+edge:HSController:ReqMotorTorqueMode:MotorHSExit:ChangeToTorqueMode_emit{}
+edge:HSController:MotorBraking:ReqMotorTorqueMode:AccPedalDeepEnough_recv{}
+edge:HSController:ReqMotorTorque:CheckMotorTorque:ReqTorque_emit{do:HSTimer=0}
+edge:HSController:HBBraking:ReqMotorTorque:AccPedalDeepEnough_recv{}
+edge:HSController:MotorBraking:BatteryError:BatteryErr_recv{}
+edge:HSController:CheckZeroSpeed:BatteryError:BatteryErr_recv{}
+edge:HSController:CheckingBattery:HBHS:tau{provided:(BatteryStat == 1)}
+edge:HSController:CheckingBattery:MotorHS:tau{provided:(BatteryStat == 0)}
+edge:HSController:Initial:CheckingBattery:ReqHillStart_recv{do:HSMode=0}
+edge:HSController:CheckHBRelease:HBReleaseError:tau{provided:((HSTimer > 200) && (HSTimer <= 250))}
+edge:HSController:CheckMotorTorque:MotorTorqueSettingError:tau{provided:((HSTimer > 100) && (HSTimer <= 105))}
+edge:HSController:CheckHBTorque:HBApplyError:tau{provided:((HSTimer > 200) && (HSTimer <= 250))}
+edge:HSController:CheckZeroTorque:HBHS:ZeroTorqueSet_recv{}
+edge:HSController:CheckZeroTorque:ZeroTorqueSettingError:tau{provided:((HSTimer > 100) && (HSTimer <= 105))}
+edge:HSController:PrepareToChangeHSMode:CheckZeroTorque:ReqZeroTorque_emit{do:HSTimer=0}
+edge:HSController:FindingZeroSpeedError:PrepareToChangeHSMode:tau{}
+edge:HSController:MotorBraking:MotorOverHeatError:tau{provided:((HSTimer > 5000) && (HSTimer <= 5050))}
+edge:HSController:CheckZeroSpeed:FindingZeroSpeedError:FindingZeroSpeedTimeOut_recv{do:HSMode=2}
+edge:HSController:CheckZeroSpeed:MotorBraking:ZeroSpeedSet_recv{do:HSTimer=0}
+edge:HSController:MotorHS:CheckZeroSpeed:ReqZeroSpeed_emit{do:HSTimer=0}
+edge:HSController:CheckHBRelease:HBHSExit:HBReleased_recv{}
+edge:HSController:MotorTorqueSet:CheckHBRelease:ReqHBRelease_emit{do:HSTimer=0}
+edge:HSController:CheckMotorTorque:MotorTorqueSet:TorqueSet_recv{}
+edge:HSController:CheckHBTorque:HBBraking:HBHighTorqueSet_recv{do:HSTimer=0}
+edge:HSController:HBHS:CheckHBTorque:ReqHBHighTorque_emit{do:HSTimer=0;HSMode=1}
+
+
+event:DNRExit_recv
+event:CBrakeExit_recv
+event:ReqHillStart_emit
+event:CBrakeNormal_recv
+event:HillStartSucceed_recv
+
+process:CarStatus
+location:CarStatus:CarBrakingOnHill{initial:}
+location:CarStatus:HillStarting{}
+location:CarStatus:NormalDriving{}
+location:CarStatus:HillStartIntervene{committed:}
+edge:CarStatus:NormalDriving:CarBrakingOnHill:tau{provided:SwitchStat+CBrakeStat +HBStat+MotorStat == 0}
+edge:CarStatus:HillStarting:NormalDriving:DNRExit_recv{}
+edge:CarStatus:CarBrakingOnHill:NormalDriving:QuitD_recv{}
+edge:CarStatus:HillStarting:NormalDriving:CBrakeExit_recv{}
+edge:CarStatus:HillStartIntervene:HillStarting:ReqHillStart_emit{}
+edge:CarStatus:CarBrakingOnHill:HillStartIntervene:CBrakeNormal_recv{}
+edge:CarStatus:HillStarting:NormalDriving:HillStartSucceed_recv{}
+
+
+
+sync:CarStatus@CBrakeExit_recv:HSController@CBrakeExit_emit
+sync:CBrake@CBrakeNormal_emit:CarStatus@CBrakeNormal_recv?
+sync:CarStatus@DNRExit_recv:HSController@DNRExit_emit
+sync:CarStatus@HillStartSucceed_recv:HSController@HillStartSucceed_emit
+sync:CarStatus@QuitD_recv?:DNRSwitch@QuitD_emit:HSController@QuitD_recv?
+sync:CarStatus@ReqHillStart_emit:HSController@ReqHillStart_recv
+
+
+
+sync:AccPedal@AccPedalDeepEnough_emit:HSController@AccPedalDeepEnough_recv?
+sync:Battery@BatteryErr_emit:HSController@BatteryErr_recv
+sync:CBrake@CBrakeDeepEnough_emit:HSController@CBrakeDeepEnough_recv?
+sync:HSController@ChangeToTorqueMode_emit:Motor@ChangeToTorqueMode_recv
+sync:HSController@FindingZeroSpeedTimeOut_recv:Motor@FindingZeroSpeedTimeOut_emit
+sync:HB@HBHighTorqueSet_emit:HSController@HBHighTorqueSet_recv
+sync:HB@HBReleased_emit:HSController@HBReleased_recv
+sync:HB@ReqHBHighTorque_recv:HSController@ReqHBHighTorque_emit
+sync:HB@ReqHBRelease_recv:HSController@ReqHBRelease_emit
+sync:HSController@ReqTorque_emit:Motor@ReqTorque_recv
+sync:HSController@ReqZeroSpeed_emit:Motor@ReqZeroSpeed_recv
+sync:HSController@ReqZeroTorque_emit:Motor@ReqZeroTorque_recv
+sync:HSController@TorqueSet_recv:Motor@TorqueSet_emit
+sync:HSController@ZeroSpeedSet_recv:Motor@ZeroSpeedSet_emit
+sync:HSController@ZeroTorqueSet_recv:Motor@ZeroTorqueSet_emit
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
