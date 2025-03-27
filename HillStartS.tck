@@ -158,17 +158,20 @@ event:ReqHBRelease_emit
 event:TorqueSet_recv
 event:HBHighTorqueSet_recv
 event:ReqHBHighTorque_emit
+event:ModeEqual1_emit
+event:ModeEqual0_emit
+
 
 process:HSController
 location:HSController:Initial{initial:}
 location:HSController:PrepareToChangeHSMode{committed:}
-location:HSController:MotorHS{committed:}
+location:HSController:MotorHS{labels:S8:committed:}
 location:HSController:CheckZeroSpeed{invariant:(HSTimer <= 800)}
 location:HSController:MotorBraking{invariant:(HSTimer <= 5050)}
 location:HSController:MotorHSExit{labels: R1:committed:}
 location:HSController:FindingZeroSpeedError{labels:S7:committed:}
 location:HSController:MotorOverHeatError{labels:S3}
-location:HSController:HBHS{committed:}
+location:HSController:HBHS{labels:S9:committed:}
 location:HSController:CheckHBTorque{invariant:(HSTimer <= 250)}
 location:HSController:HBBraking{invariant:(HSTimer <= 5050)}
 location:HSController:CheckMotorTorque{invariant:(HSTimer <= 105)}
@@ -219,13 +222,13 @@ edge:HSController:ReqMotorTorque:CheckMotorTorque:ReqTorque_emit{do:HSTimer=0}
 edge:HSController:HBBraking:ReqMotorTorque:AccPedalDeepEnough_recv{}
 edge:HSController:MotorBraking:BatteryError:BatteryErr_recv{}
 edge:HSController:CheckZeroSpeed:BatteryError:BatteryErr_recv{}
-edge:HSController:CheckingBattery:HBHS:tau{provided:(BatteryStat == 1)}
-edge:HSController:CheckingBattery:MotorHS:tau{provided:(BatteryStat == 0)}
+edge:HSController:CheckingBattery:HBHS:ModeEqual1_emit{provided:(BatteryStat == 1):do:HSMode=1}
+edge:HSController:CheckingBattery:MotorHS:ModeEqual0_emit{provided:(BatteryStat == 0):do:HSMode=0}
 edge:HSController:Initial:CheckingBattery:ReqHillStart_recv{}
 edge:HSController:CheckHBRelease:HBReleaseError:tau{provided:((HSTimer > 200) && (HSTimer <= 250))}
 edge:HSController:CheckMotorTorque:MotorTorqueSettingError:tau{provided:((HSTimer > 100) && (HSTimer <= 105))}
 edge:HSController:CheckHBTorque:HBApplyError:tau{provided:((HSTimer > 200) && (HSTimer <= 250))}
-edge:HSController:CheckZeroTorque:HBHS:ZeroTorqueSet_recv{}
+edge:HSController:CheckZeroTorque:HBHS:ZeroTorqueSet_recv{do:HSMode=1}
 edge:HSController:CheckZeroTorque:ZeroTorqueSettingError:tau{provided:((HSTimer > 100) && (HSTimer <= 105))}
 edge:HSController:PrepareToChangeHSMode:CheckZeroTorque:ReqZeroTorque_emit{do:HSTimer=0}
 edge:HSController:FindingZeroSpeedError:PrepareToChangeHSMode:tau{}
@@ -237,7 +240,7 @@ edge:HSController:CheckHBRelease:HBHSExit:HBReleased_recv{}
 edge:HSController:MotorTorqueSet:CheckHBRelease:ReqHBRelease_emit{do:HSTimer=0}
 edge:HSController:CheckMotorTorque:MotorTorqueSet:TorqueSet_recv{}
 edge:HSController:CheckHBTorque:HBBraking:HBHighTorqueSet_recv{do:HSTimer=0}
-edge:HSController:HBHS:CheckHBTorque:ReqHBHighTorque_emit{do:HSTimer=0;HSMode=1}
+edge:HSController:HBHS:CheckHBTorque:ReqHBHighTorque_emit{do:HSTimer=0}
 
 
 event:DNRExit_recv
@@ -310,6 +313,24 @@ sync:Err4@ErrStatEqual4_recv?:Motor@ErrStatEqual4_emit
 sync:Err5@ErrStatEqual5_recv?:Motor@ErrStatEqual5_emit
 sync:Err6@ErrStatEqual6_recv?:HB@ErrStatEqual6_emit
 
+event:ModeEqual1_recv
+event:ModeEqual0_recv
+
+process:ModeValue
+location:ModeValue:Zero{labels:SS9:initial:}
+location:ModeValue:One{labels:SS8}
+location:ModeValue:Two{labels:SS8,SS9}
+edge:ModeValue:Two:One:ZeroTorqueSet_recv{}
+edge:ModeValue:Zero:Two:FindingZeroSpeedTimeOut_recv{}
+edge:ModeValue:One:Zero:ModeEqual0_recv{}
+edge:ModeValue:Zero:One:ModeEqual1_recv{}
+
+sync:HSController@ModeEqual0_emit:ModeValue@ModeEqual0_recv
+sync:HSController@ModeEqual1_emit:ModeValue@ModeEqual1_recv
+
+
+
+
 
 sync:CarStatus@CBrakeExit_recv:HSController@CBrakeExit_emit
 sync:CBrake@CBrakeNormal_emit:CarStatus@CBrakeNormal_recv?
@@ -324,17 +345,17 @@ sync:AccPedal@AccPedalDeepEnough_emit:HSController@AccPedalDeepEnough_recv?
 sync:Battery@BatteryErr_emit:HSController@BatteryErr_recv
 sync:CBrake@CBrakeDeepEnough_emit:HSController@CBrakeDeepEnough_recv?
 sync:HSController@ChangeToTorqueMode_emit:Motor@ChangeToTorqueMode_recv
-sync:HSController@FindingZeroSpeedTimeOut_recv:Motor@FindingZeroSpeedTimeOut_emit:bValue@bEqual1?
+sync:HSController@FindingZeroSpeedTimeOut_recv:Motor@FindingZeroSpeedTimeOut_emit:bValue@bEqual1?:ModeValue@FindingZeroSpeedTimeOut_recv{}
 sync:HB@HBHighTorqueSet_emit:HSController@HBHighTorqueSet_recv
 sync:HB@HBReleased_emit:HSController@HBReleased_recv
 sync:HB@ReqHBHighTorque_recv:HSController@ReqHBHighTorque_emit
 sync:HB@ReqHBRelease_recv:HSController@ReqHBRelease_emit
 sync:HSController@ReqTorque_emit:Motor@ReqTorque_recv
-sync:HSController@ReqZeroSpeed_emit:Motor@ReqZeroSpeed_recv
+sync:HSController@ReqZeroSpeed_emit:Motor@ReqZeroSpeed_recv:ModeValue@ReqZeroSpeed_recv
 sync:HSController@ReqZeroTorque_emit:Motor@ReqZeroTorque_recv:bValue@bEqual0_recv?
 sync:HSController@TorqueSet_recv:Motor@TorqueSet_emit
 sync:HSController@ZeroSpeedSet_recv:Motor@ZeroSpeedSet_emit
-sync:HSController@ZeroTorqueSet_recv:Motor@ZeroTorqueSet_emit
+sync:HSController@ZeroTorqueSet_recv:Motor@ZeroTorqueSet_emit:ModeValue@ZeroTorqueSet_recv?
 
 
 
