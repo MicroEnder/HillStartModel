@@ -5,7 +5,7 @@
 
 HillStart 为初始模型
 
-HillStartS 为针对安全性属性添加辅助自动机的模型，用于检测安全性属性1-7，在检测时输入 
+HillStartS 为针对安全性属性添加辅助自动机的模型，用于检测安全性属性1-9，在检测时输入 
 
 `tck-reach -a covreach -Li HillStartS.tck `
 
